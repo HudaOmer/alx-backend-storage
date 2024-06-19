@@ -1,40 +1,51 @@
 #!/usr/bin/env python3
 """
-This Module defimes web cache and tracker
+This Module implements an expiring web cache and tracker
 """
 import requests
-import redis
+import time
 from functools import wraps
 
-store = redis.Redis()
+CACHE_EXPIRATION_TIME = 10  # seconds
+CACHE = {}
 
 
-def count_url_access(method):
+def cache(fn):
     """
-    A Decorator counting how many times
-    a URL is accessed
+    Args:
+        fn (function): _description_
+    Returns:
+        _type_: _description_
     """
-    @wraps(method)
-    def wrapper(url):
-        cached_key = "cached:" + url
-        cached_data = store.get(cached_key)
-        if cached_data:
-            return cached_data.decode("utf-8")
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        """
+        Returns:
+            _type_: _description_
+        """
+        url = args[0]
+        if url in CACHE and CACHE[url]["timestamp"] + CACHE_EXPIRATION_TIME > \
+                time.time():
+            CACHE[url]["count"] += 1
+            return CACHE[url]["content"]
+        else:
+            content = fn(*args, **kwargs)
+            CACHE[url] = {"content": content,
+                          "timestamp": time.time(), "count": 1}
+            return content
+    return wrapped
 
-        count_key = "count:" + url
-        html = method(url)
 
-        store.incr(count_key)
-        store.set(cached_key, html)
-        store.expire(cached_key, 10)
-        return html
-    return wrapper
-
-
-@count_url_access
+@cache
 def get_page(url: str) -> str:
     """
-    This Returns HTML content of a url
+    Args:
+        url (str): _description_
+    Returns:
+        str: _description_
     """
-    res = requests.get(url)
-    return res.text
+    global count
+    # increment count
+    count += 1
+    response = requests.get(url)
+    return response.content.decode('utf-8')
